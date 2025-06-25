@@ -75,8 +75,19 @@ def run_demo():
     console.print("[bold green]🎮 VALORANT パケットロス追跡ツール - デモモード[/bold green]")
     console.print("=" * 60)
     
-    # デモデータ生成
+    # デモデータ生成（進捗表示付き）
     console.print("📊 デモデータを生成中...")
+    console.print("[dim]データ生成には数秒かかります...[/dim]")
+    
+    # プログレスバーシミュレーション
+    import time
+    for i in range(5):
+        progress = (i + 1) * 20
+        bar = "█" * (progress // 5) + "░" * (20 - progress // 5)
+        console.print(f"\r[{bar}] {progress}%", end="")
+        time.sleep(0.5)
+    console.print("\n")
+    
     demo_results = generate_demo_data(duration_minutes=10, region="Tokyo (Japan)")
     
     # 一般サービスのデモデータも生成
@@ -115,6 +126,7 @@ def run_demo():
     console.print("- demo_test_stats.json (統計情報)")
     console.print("- demo_analysis.png (グラフ)")
     console.print("\n💡 実際のテストを行うには 'python main.py' を実行してください")
+    console.print("[yellow]💡 実際のテストでは残り時間とプログレスバーが表示されます[/yellow]")
 
 def generate_reference_demo_data(duration_minutes: int = 5) -> list:
     """一般サービス用のデモデータを生成"""

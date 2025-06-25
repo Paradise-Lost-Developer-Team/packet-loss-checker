@@ -157,9 +157,28 @@ class VALORANTServerTracker:
         console.print(f"[green]パケットロステスト開始: {self.current_region}[/green]")
         console.print(f"[yellow]テスト時間: {duration_minutes}分[/yellow]")
         console.print(f"[cyan]対象サーバー: {servers}[/cyan]")
+        console.print(f"[blue]終了予定時刻: {end_time.strftime('%H:%M:%S')}[/blue]")
+        console.print()
         
         try:
             while self.is_running and datetime.now() < end_time:
+                current_time = datetime.now()
+                
+                # 時間計算
+                remaining_time = end_time - current_time
+                remaining_total_seconds = max(0, remaining_time.total_seconds())
+                remaining_minutes = int(remaining_total_seconds // 60)
+                remaining_seconds = int(remaining_total_seconds % 60)
+                
+                # 進捗計算
+                elapsed_time = current_time - self.start_time
+                elapsed_total_seconds = elapsed_time.total_seconds()
+                progress_percentage = min(100, (elapsed_total_seconds / (duration_minutes * 60)) * 100)
+                
+                # 経過時間表示用
+                elapsed_minutes = int(elapsed_total_seconds // 60)
+                elapsed_seconds_remainder = int(elapsed_total_seconds % 60)
+                
                 for server in servers:
                     if not self.is_running:
                         break
@@ -167,17 +186,109 @@ class VALORANTServerTracker:
                     result = self.ping_server(server)
                     self.results.append(result)
                     
-                    # リアルタイム結果表示
+                    # リアルタイム結果表示（改善された時間表示付き）
                     status = "❌ LOSS" if result.packet_loss else f"✅ {result.latency:.1f}ms"
-                    console.print(f"[dim]{result.timestamp[-8:]}[/dim] {server}: {status}")
+                    progress_bar = "█" * int(progress_percentage // 5) + "░" * (20 - int(progress_percentage // 5))
+                    
+                    # 時間表示の改善
+                    time_info = f"⏱️ {elapsed_minutes:02d}:{elapsed_seconds_remainder:02d} / {remaining_minutes:02d}:{remaining_seconds:02d}"
+                    
+                    console.print(
+                        f"[dim]{result.timestamp[-8:]}[/dim] {server}: {status} "
+                        f"[cyan]│[/cyan] [{progress_bar}] {progress_percentage:.1f}% "
+                        f"[yellow]{time_info}[/yellow]"
+                    )
                     
                     time.sleep(self.interval)
+                
+                # リアルタイム統計表示（30秒ごと）
+                if int(elapsed_total_seconds) % 30 == 0 and elapsed_total_seconds > 0:
+                    self._display_realtime_stats(self.results, int(elapsed_total_seconds))
                     
         except KeyboardInterrupt:
             console.print("\n[yellow]テストが中断されました[/yellow]")
         finally:
             self.is_running = False
+            console.print(f"\n[green]✅ テストが完了しました（実行時間: {elapsed_time.total_seconds():.0f}秒）[/green]")
             
+    def _display_realtime_stats(self, current_results: List[PingResult], elapsed_seconds: int):
+        """リアルタイム統計情報を表示"""
+        if not current_results:
+            return
+            
+        # 基本統計
+        total_packets = len(current_results)
+        lost_packets = len([r for r in current_results if r.packet_loss])
+        successful_pings = [r for r in current_results if not r.packet_loss]
+        
+        if total_packets > 0:
+            packet_loss_rate = (lost_packets / total_packets) * 100
+            
+            # 統計表示（簡潔版）
+            if successful_pings:
+                latencies = [r.latency for r in successful_pings]
+                current_avg = statistics.mean(latencies)
+                current_min = min(latencies)
+                current_max = max(latencies)
+                
+                # 最後の5つの結果で短期トレンド計算
+                recent_pings = successful_pings[-5:] if len(successful_pings) >= 5 else successful_pings
+                recent_avg = statistics.mean([r.latency for r in recent_pings]) if recent_pings else 0
+                
+                # トレンド矢印
+                trend = "📈" if recent_avg > current_avg else "📉" if recent_avg < current_avg else "➡️"
+                
+                stats_info = (
+                    f"[dim]│ パケット: {total_packets} │ ロス: {packet_loss_rate:.1f}% │ "
+                    f"レイテンシー: {current_avg:.1f}ms ({current_min:.1f}-{current_max:.1f}) {trend}[/dim]"
+                )
+                console.print(stats_info)
+        
+        # 5分おきに詳細統計を表示
+        if elapsed_seconds > 0 and elapsed_seconds % 300 == 0:
+            console.print(f"\n[cyan]📊 {elapsed_seconds//60}分経過時点での統計[/cyan]")
+            self._display_intermediate_stats(current_results)
+            console.print()
+    
+    def _display_intermediate_stats(self, results: List[PingResult]):
+        """中間統計を表示"""
+        if not results:
+            return
+            
+        # サーバー別統計
+        server_stats = {}
+        for result in results:
+            server = result.server
+            if server not in server_stats:
+                server_stats[server] = {"total": 0, "lost": 0, "latencies": []}
+            
+            server_stats[server]["total"] += 1
+            if result.packet_loss:
+                server_stats[server]["lost"] += 1
+            else:
+                server_stats[server]["latencies"].append(result.latency)
+        
+        # 表形式で表示
+        table = Table(box=box.SIMPLE)
+        table.add_column("サーバー", style="cyan")
+        table.add_column("ロス率", style="red")
+        table.add_column("平均レイテンシー", style="green")
+        
+        for server, stats in server_stats.items():
+            loss_rate = (stats["lost"] / stats["total"]) * 100 if stats["total"] > 0 else 0
+            avg_latency = statistics.mean(stats["latencies"]) if stats["latencies"] else 0
+            
+            # サーバーIPを短縮表示
+            server_display = server.split('.')[-1] if '.' in server else server[:15]
+            
+            table.add_row(
+                server_display,
+                f"{loss_rate:.1f}%",
+                f"{avg_latency:.1f}ms" if avg_latency > 0 else "N/A"
+            )
+        
+        console.print(table)
+    
     def calculate_stats(self) -> Dict[str, NetworkStats]:
         """サーバーごとの統計情報を計算"""
         server_stats = {}
@@ -466,7 +577,8 @@ class VALORANTServerTracker:
         console.print(f"[cyan]📡 一般サービスへの接続テストを開始（{duration_minutes}分間）[/cyan]")
         
         self.reference_results.clear()
-        end_time = datetime.now() + timedelta(minutes=duration_minutes)
+        start_time = datetime.now()
+        end_time = start_time + timedelta(minutes=duration_minutes)
         
         # 各サービスから1つずつサーバーを選択
         test_servers = {}
@@ -476,26 +588,54 @@ class VALORANTServerTracker:
         console.print("[yellow]テスト対象サービス:[/yellow]")
         for service, server in test_servers.items():
             console.print(f"  • {service}: {server}")
+        console.print(f"[blue]終了予定時刻: {end_time.strftime('%H:%M:%S')}[/blue]")
         console.print()
         
         try:
             while datetime.now() < end_time:
+                current_time = datetime.now()
+                
+                # 時間計算
+                remaining_time = end_time - current_time
+                remaining_total_seconds = max(0, remaining_time.total_seconds())
+                remaining_minutes = int(remaining_total_seconds // 60)
+                remaining_seconds = int(remaining_total_seconds % 60)
+                
+                # 進捗計算
+                elapsed_time = current_time - start_time
+                elapsed_total_seconds = elapsed_time.total_seconds()
+                progress_percentage = min(100, (elapsed_total_seconds / (duration_minutes * 60)) * 100)
+                
+                # 経過時間表示用
+                elapsed_minutes = int(elapsed_total_seconds // 60)
+                elapsed_seconds_remainder = int(elapsed_total_seconds % 60)
+                
                 for service, server in test_servers.items():
                     result = self.ping_server(server)
                     # サービス名を記録するため、serverフィールドを拡張
                     result.server = f"{service}|{server}"
                     self.reference_results.append(result)
                     
-                    # リアルタイム結果表示
+                    # リアルタイム結果表示（改善された時間表示付き）
                     status = "❌ LOSS" if result.packet_loss else f"✅ {result.latency:.1f}ms"
-                    console.print(f"[dim]{result.timestamp[-8:]}[/dim] {service}: {status}")
+                    progress_bar = "█" * int(progress_percentage // 5) + "░" * (20 - int(progress_percentage // 5))
+                    
+                    # 時間表示の改善
+                    time_info = f"⏱️ {elapsed_minutes:02d}:{elapsed_seconds_remainder:02d} / {remaining_minutes:02d}:{remaining_seconds:02d}"
+                    
+                    console.print(
+                        f"[dim]{result.timestamp[-8:]}[/dim] {service}: {status} "
+                        f"[cyan]│[/cyan] [{progress_bar}] {progress_percentage:.1f}% "
+                        f"[yellow]{time_info}[/yellow]"
+                    )
                     
                     time.sleep(self.interval / len(test_servers))  # 間隔を調整
                     
         except KeyboardInterrupt:
             console.print("\n[yellow]一般サービステストが中断されました[/yellow]")
         
-        console.print(f"[green]✅ 一般サービステストが完了しました[/green]")
+        elapsed_time = datetime.now() - start_time
+        console.print(f"\n[green]✅ 一般サービステストが完了しました（実行時間: {elapsed_time.total_seconds():.0f}秒）[/green]")
         
     def compare_with_reference_servers(self) -> Dict:
         """VALORANTサーバーと一般サービスの結果を比較"""
@@ -734,22 +874,31 @@ class VALORANTServerTracker:
     def run_comprehensive_test(self, duration_minutes: int = 10):
         """VALORANTサーバーと一般サービスの包括的テスト"""
         console.print("[bold green]🚀 包括的ネットワーク品質テストを開始[/bold green]")
+        console.print(f"[yellow]総テスト時間: {duration_minutes}分[/yellow]")
+        
+        half_duration = duration_minutes // 2
+        
         console.print()
         
         # Step 1: 一般サービステスト
-        console.print("[bold cyan]Step 1: 一般サービス接続テスト[/bold cyan]")
-        self.test_reference_servers(duration_minutes // 2)
+        console.print("[bold cyan]Step 1/2: 一般サービス接続テスト[/bold cyan]")
+        console.print(f"[dim]この段階の時間: {half_duration}分[/dim]")
+        self.test_reference_servers(half_duration)
         
         console.print()
-        console.print("[bold cyan]Step 2: VALORANTサーバーテスト[/bold cyan]")
+        console.print("[bold cyan]Step 2/2: VALORANTサーバーテスト[/bold cyan]")
+        console.print(f"[dim]この段階の時間: {half_duration}分[/dim]")
         # Step 2: VALORANTサーバーテスト
-        self.run_continuous_test(duration_minutes // 2)
+        self.run_continuous_test(half_duration)
         
         console.print()
         console.print("[bold cyan]Step 3: 結果分析[/bold cyan]")
+        console.print("[dim]分析を実行しています...[/dim]")
         # Step 3: 結果表示と比較
         self.display_results()
         self.display_comparison_results()
+        
+        console.print("\n[bold green]🎉 包括的テストが完了しました！[/bold green]")
     
     def import_results(self, filename: str = None):
         """保存された結果をインポート"""
