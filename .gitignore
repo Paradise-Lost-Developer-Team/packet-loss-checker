@@ -192,3 +192,24 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+
+*.csv
+#  CSV files are often used for data storage and transfer, but they can contain sensitive information.
+#  It's recommended to exclude them from version control to prevent accidental exposure.
+#  If you need to include them, consider using a more secure format or encrypting the files.
+#  If you are using CSV files for configuration or data that should not be shared, you can uncomment the following line.
+# *.csv
+
+*.json
+#  JSON files are commonly used for configuration and data interchange, but they can also contain sensitive.
+#  information. It's recommended to exclude them from version control to prevent accidental exposure.
+#  If you need to include them, consider using a more secure format or encrypting the files.
+#  If you are using JSON files for configuration or data that should not be shared, you can uncomment the following line.
+# *.json
+
+*.png
+#  PNG files are often used for images and graphics, but they can also contain sensitive information.
+#  It's recommended to exclude them from version control to prevent accidental exposure.
+#  If you need to include them, consider using a more secure format or encrypting the files.
+#  If you are using PNG files for images or graphics that should not be shared, you can uncomment the following line.
+# *.png
