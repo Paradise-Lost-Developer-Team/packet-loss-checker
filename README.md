@@ -38,7 +38,7 @@ VALORANTのネットワーク品質を監視し、パケットロスやレイテ
 
 ```bash
 # リポジトリをクローン
-git clone https://github.com/yourusername/packet-loss-checker.git
+git clone https://github.com/Paradise-Lost-Developer-Team/packet-loss-checker.git
 cd packet-loss-checker
 
 # 依存関係をインストール
